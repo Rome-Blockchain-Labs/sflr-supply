@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
-    ops::{Div, Mul},
     str::FromStr,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
@@ -132,7 +131,7 @@ mod core {
         }
         
         // Convert remainder to string and pad with leading zeros
-        let mut fraction_str = remainder.to_string();
+        let fraction_str = remainder.to_string();
         let padding = decimals as usize - fraction_str.len();
         let mut padded_fraction = "0".repeat(padding) + &fraction_str;
         
@@ -141,7 +140,7 @@ mod core {
             padded_fraction.pop();
         }
         
-        format!("{}.{}", integer_part, padded_fraction)
+        format!("{integer_part}.{padded_fraction}")
     }
 
     pub async fn fetch_contract_data(
@@ -150,35 +149,35 @@ mod core {
         // Call totalSupply()
         let total_supply: U256 = contract
             .method::<_, U256>("totalSupply", ())
-            .map_err(|e| format!("Failed to create totalSupply call: {}", e))?
+            .map_err(|e| format!("Failed to create totalSupply call: {e}"))?
             .call()
             .await
-            .map_err(|e| format!("totalSupply call failed: {}", e))?;
+            .map_err(|e| format!("totalSupply call failed: {e}"))?;
 
         // Call totalPooledFlr()
         let total_pooled_flr: U256 = contract
             .method::<_, U256>("totalPooledFlr", ())
-            .map_err(|e| format!("Failed to create totalPooledFlr call: {}", e))?
+            .map_err(|e| format!("Failed to create totalPooledFlr call: {e}"))?
             .call()
             .await
-            .map_err(|e| format!("totalPooledFlr call failed: {}", e))?;
+            .map_err(|e| format!("totalPooledFlr call failed: {e}"))?;
 
         // Call stakerCount()
         let staker_count: U256 = contract
             .method::<_, U256>("stakerCount", ())
-            .map_err(|e| format!("Failed to create stakerCount call: {}", e))?
+            .map_err(|e| format!("Failed to create stakerCount call: {e}"))?
             .call()
             .await
-            .map_err(|e| format!("stakerCount call failed: {}", e))?;
+            .map_err(|e| format!("stakerCount call failed: {e}"))?;
 
         // Call getPooledFlrByShares() to get exchange rate
         let scaling_factor = U256::from(10).pow(U256::from(18));
         let exchange_rate: U256 = contract
             .method::<_, U256>("getPooledFlrByShares", (scaling_factor,))
-            .map_err(|e| format!("Failed to create getPooledFlrByShares call: {}", e))?
+            .map_err(|e| format!("Failed to create getPooledFlrByShares call: {e}"))?
             .call()
             .await
-            .map_err(|e| format!("getPooledFlrByShares call failed: {}", e))?;
+            .map_err(|e| format!("getPooledFlrByShares call failed: {e}"))?;
 
         Ok((total_supply, exchange_rate, total_pooled_flr, staker_count))
     }
@@ -196,11 +195,10 @@ mod core {
                 Ok((supply, exchange_rate, total_pooled_flr, staker_count)) => {
                     let mut cache = state.cache.write().unwrap();
                     cache.update(supply, exchange_rate, total_pooled_flr, staker_count);
-                    info!("Cache updated: supply={}, exchange_rate={}, total_pooled_flr={}, staker_count={}", 
-                          supply, exchange_rate, total_pooled_flr, staker_count);
+                    info!("Cache updated: supply={supply}, exchange_rate={exchange_rate}, total_pooled_flr={total_pooled_flr}, staker_count={staker_count}");
                 }
                 Err(e) => {
-                    error!("Failed to update cache: {}", e);
+                    error!("Failed to update cache: {e}");
                 }
             }
         }
@@ -244,7 +242,7 @@ mod api {
                 })
             },
             Err(e) => {
-                error!("Error fetching supply: {}", e);
+                error!("Error fetching supply: {e}");
                 
                 // Try to use stale cache as fallback
                 let cache = state.cache.read().unwrap();
@@ -292,7 +290,7 @@ mod api {
                 })
             },
             Err(e) => {
-                error!("Error fetching supply: {}", e);
+                error!("Error fetching supply: {e}");
                 
                 // Try to use stale cache as fallback
                 let cache = state.cache.read().unwrap();
@@ -348,7 +346,7 @@ mod api {
                 })
             },
             Err(e) => {
-                error!("Error fetching stats: {}", e);
+                error!("Error fetching stats: {e}");
                 
                 // Try to use stale cache as fallback
                 let cache = state.cache.read().unwrap();
@@ -451,7 +449,7 @@ async fn main() -> std::io::Result<()> {
     let provider = match Provider::<Http>::try_from(&config.rpc_url as &str) {
         Ok(provider) => provider,
         Err(e) => {
-            error!("Failed to connect to RPC: {}", e);
+            error!("Failed to connect to RPC: {e}");
             std::process::exit(1);
         }
     };
@@ -460,7 +458,7 @@ async fn main() -> std::io::Result<()> {
     let contract_address = match Address::from_str(&config.contract_address) {
         Ok(addr) => addr,
         Err(e) => {
-            error!("Invalid contract address: {}", e);
+            error!("Invalid contract address: {e}");
             std::process::exit(1);
         }
     };
@@ -474,7 +472,7 @@ async fn main() -> std::io::Result<()> {
     ]) {
         Ok(abi) => abi,
         Err(e) => {
-            error!("Failed to parse ABI: {}", e);
+            error!("Failed to parse ABI: {e}");
             std::process::exit(1);
         }
     };
@@ -502,18 +500,17 @@ async fn main() -> std::io::Result<()> {
             let mut cache_guard = cache.write().unwrap();
             cache_guard.update(supply, exchange_rate, total_pooled_flr, staker_count);
             info!(
-                "Initial data loaded: supply={}, exchange_rate={}, total_pooled_flr={}, staker_count={}", 
-                supply, exchange_rate, total_pooled_flr, staker_count
+                "Initial data loaded: supply={supply}, exchange_rate={exchange_rate}, total_pooled_flr={total_pooled_flr}, staker_count={staker_count}"
             );
         },
         Err(e) => {
-            error!("Failed to fetch initial data: {}", e);
+            error!("Failed to fetch initial data: {e}");
         }
     }
     
     // Start HTTP server
     let bind_address = format!("{}:{}", config.listen_address, config.port);
-    info!("Listening on {}", bind_address);
+    info!("Listening on {bind_address}");
     info!("API endpoints available at /info");
     
     HttpServer::new(move || {
