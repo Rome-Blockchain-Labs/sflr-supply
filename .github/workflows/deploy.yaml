@@ -1,0 +1,134 @@
+name: deploy sflr-supply-api
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to deploy'
+        required: true
+        default: 'latest'
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+
+jobs:
+  deploy:
+    env:
+      EXTERNAL_PORT: ${{ github.event.inputs.environment == 'production' && '5360' || github.event.inputs.environment == 'staging' && '5361' || '5362' }}
+    name: deploy to ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download release binary
+        run: |
+          if [ "${{ github.event.inputs.tag }}" = "latest" ]; then
+            DOWNLOAD_URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.assets[0].browser_download_url')
+          else
+            DOWNLOAD_URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ github.event.inputs.tag }} | jq -r '.assets[0].browser_download_url')
+          fi
+          curl -L $DOWNLOAD_URL -o sflr-supply-api
+          chmod +x sflr-supply-api
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Deploy using Docker
+        env:
+          ENV_NAME: ${{ github.event.inputs.environment }}
+          CONTAINER_NAME: sflr-supply-api-${{ github.event.inputs.environment }}
+          APP_PORT: '3000'
+          # Get environment-specific variables
+          RPC_URL: ${{ vars[format('{0}_RPC_URL', github.event.inputs.environment)] }}
+          CONTRACT_ADDRESS: ${{ vars[format('{0}_CONTRACT_ADDRESS', github.event.inputs.environment)] }}
+          CACHE_TTL: ${{ vars[format('{0}_CACHE_TTL', github.event.inputs.environment)] || '1800' }}
+        run: |
+          ssh-keyscan ${{ vars.SERVER_IP }} >> ~/.ssh/known_hosts
+          
+          mkdir -p docker-deploy
+          
+          cat > docker-deploy/Dockerfile << EOF
+          FROM debian:bookworm-slim
+          WORKDIR /app
+          
+          # Install dependencies for Rust binaries
+          RUN apt-get update && apt-get install -y \
+              libssl3 \
+              ca-certificates \
+              tzdata \
+              curl \
+              && rm -rf /var/lib/apt/lists/*
+          
+          COPY sflr-supply-api /app/sflr-supply-api
+          RUN chmod +x /app/sflr-supply-api
+          
+          EXPOSE ${APP_PORT}
+          ENV RUST_LOG=info
+          
+          ENTRYPOINT ["/app/sflr-supply-api"]
+          EOF
+          
+          # Create docker-compose.yml with SFLR-specific environment variables
+          cat > docker-deploy/docker-compose.yml << EOF
+          version: '3'
+          services:
+            sflr-supply-api:
+              container_name: ${CONTAINER_NAME}
+              build: .
+              restart: unless-stopped
+              ports:
+                - "${EXTERNAL_PORT}:${APP_PORT}"
+              environment:
+                - RUST_LOG=info
+                - PORT=${APP_PORT}
+                - SFLR_RPC_URL=${RPC_URL}
+                - SFLR_CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
+                - SFLR_CACHE_TTL_SECONDS=${CACHE_TTL}
+                - SFLR_LISTEN_ADDRESS=0.0.0.0
+                - SFLR_PORT=${APP_PORT}
+          EOF
+          
+          # Copy our binary to the deployment directory
+          cp sflr-supply-api docker-deploy/
+          
+          # Create a deployment script
+          cat > docker-deploy/deploy.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          # Stop and remove existing container if it exists
+          docker stop ${CONTAINER_NAME} || true
+          docker rm ${CONTAINER_NAME} || true
+          
+          # Build and start the new container
+          docker compose up -d --build
+          
+          # Show logs
+          docker logs ${CONTAINER_NAME}
+          EOF
+          
+          chmod +x docker-deploy/deploy.sh
+          
+          # Create the deployment directory on the server
+          ssh ${{ vars.SSH_USER }}@${{ vars.SERVER_IP }} "mkdir -p ~/sflr-supply-api-${ENV_NAME}"
+          
+          # Copy deployment files
+          scp -r docker-deploy/* ${{ vars.SSH_USER }}@${{ vars.SERVER_IP }}:~/sflr-supply-api-${ENV_NAME}/
+          
+          # Execute the deployment
+          ssh ${{ vars.SSH_USER }}@${{ vars.SERVER_IP }} << EOF
+            cd ~/sflr-supply-api-${ENV_NAME}
+            
+            export CONTAINER_NAME=${CONTAINER_NAME}
+            
+            ./deploy.sh
+            
+            # Show running containers
+            docker ps | grep sflr-supply-api
+          EOF
