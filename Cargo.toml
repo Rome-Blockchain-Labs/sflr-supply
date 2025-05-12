@@ -11,3 +11,4 @@ toml = "0.7.8"
 log = "0.4.27"
 env_logger = "0.10.2"
 ethers = { version = "2.0", features = ["legacy"] }
+ring = "0.17.14"
