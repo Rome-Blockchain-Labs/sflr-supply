@@ -3106,6 +3106,7 @@ dependencies = [
  "env_logger",
  "ethers",
  "log",
+ "ring 0.17.14",
  "serde",
  "tokio",
  "toml 0.7.8",

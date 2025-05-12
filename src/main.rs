@@ -544,8 +544,9 @@ async fn main() -> std::io::Result<()> {
             )
             // Stats and metadata endpoints
             .service(web::resource("/stats").route(web::get().to(api::stats)))
-            .service(web::resource("/health").route(web::get().to(api::health)))
             .service(web::resource("/info").route(web::get().to(api::info)))
+            // Health
+            .service(web::resource("/health").route(web::get().to(api::health)))
             // Root path redirects to info
             .service(web::resource("/").route(web::get().to(api::info)))
     })
