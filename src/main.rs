@@ -520,11 +520,8 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             // CoinGecko compatible endpoints (raw values)
-            .service(web::resource("/supply/{token_id}").route(web::get().to(api::supply)))
-            .service(web::resource("/total_supply/{token_id}").route(web::get().to(api::supply)))
-            // Human-readable endpoints
-            .service(web::resource("/supply-formatted/{token_id}").route(web::get().to(api::supply_formatted)))
-            .service(web::resource("/total_supply-formatted/{token_id}").route(web::get().to(api::supply_formatted)))
+            .service(web::resource("/supply/{token_id}").route(web::get().to(api::supply_formatted)))
+            .service(web::resource("/total_supply/{token_id}").route(web::get().to(api::supply_formatted)))
             // Stats and metadata endpoints
             .service(web::resource("/stats").route(web::get().to(api::stats)))
             .service(web::resource("/health").route(web::get().to(api::health)))
