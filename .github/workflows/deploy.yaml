@@ -14,6 +14,10 @@ on:
           - production
           - staging
           - development
+      custom_env:
+        description: 'Use custom configuration (JSON format, e.g. {"SFLR_RPC_URL":"https://example.com"})'
+        required: false
+        default: '{}'
 
 jobs:
   deploy:
@@ -44,10 +48,7 @@ jobs:
           ENV_NAME: ${{ github.event.inputs.environment }}
           CONTAINER_NAME: sflr-supply-api-${{ github.event.inputs.environment }}
           APP_PORT: '3000'
-          # Get environment-specific variables
-          RPC_URL: ${{ vars[format('{0}_RPC_URL', github.event.inputs.environment)] }}
-          CONTRACT_ADDRESS: ${{ vars[format('{0}_CONTRACT_ADDRESS', github.event.inputs.environment)] }}
-          CACHE_TTL: ${{ vars[format('{0}_CACHE_TTL', github.event.inputs.environment)] || '1800' }}
+          CUSTOM_ENV: ${{ github.event.inputs.custom_env }}
         run: |
           ssh-keyscan ${{ vars.SERVER_IP }} >> ~/.ssh/known_hosts
           
@@ -74,7 +75,7 @@ jobs:
           ENTRYPOINT ["/app/sflr-supply-api"]
           EOF
           
-          # Create docker-compose.yml with SFLR-specific environment variables
+          # Create a basic docker-compose.yml with minimal environment
           cat > docker-deploy/docker-compose.yml << EOF
           version: '3'
           services:
@@ -87,12 +88,15 @@ jobs:
               environment:
                 - RUST_LOG=info
                 - PORT=${APP_PORT}
-                - SFLR_RPC_URL=${RPC_URL}
-                - SFLR_CONTRACT_ADDRESS=${CONTRACT_ADDRESS}
-                - SFLR_CACHE_TTL_SECONDS=${CACHE_TTL}
-                - SFLR_LISTEN_ADDRESS=0.0.0.0
-                - SFLR_PORT=${APP_PORT}
           EOF
+          
+          # Process custom environment variables if provided
+          if [ "$CUSTOM_ENV" != "{}" ] && [ -n "$CUSTOM_ENV" ]; then
+            echo "Adding custom environment variables"
+            
+            # Use jq to extract keys and values from the custom environment JSON
+            echo $CUSTOM_ENV | jq -r 'to_entries | .[] | "                - " + .key + "=" + .value' >> docker-deploy/docker-compose.yml
+          fi
           
           # Copy our binary to the deployment directory
           cp sflr-supply-api docker-deploy/
